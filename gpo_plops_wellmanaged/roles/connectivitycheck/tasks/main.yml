@@ -1,0 +1,37 @@
+---
+- name: Check if server is reachable
+  wait_for_connection:
+    timeout: 90
+  register: server_reachable
+  ignore_errors: true
+  become: false
+# server_reachable.failed
+
+- name: Set wmsummary
+  set_fact:
+    wmsummary: "SSH: Unable to login via SSH. Cannot evaluate most facts [-10]|"
+  when: server_reachable.failed is defined and server_reachable.failed 
+
+- name: Deduct 10 points (SSH login)
+  set_fact:
+    score:  "{{ score|int - 10 }}"
+  when: server_reachable.failed is defined and server_reachable.failed 
+
+- name: Check if we can sudo to root
+  wait_for_connection:
+    timeout: 90
+  register: server_sudoable
+  ignore_errors: true
+  become: true
+  when: server_reachable.failed is defined and not server_reachable.failed 
+
+- name: Set wmsummary
+  set_fact:
+    wmsummary: "SUDO: Automation account is unable to sudo to root. Cannot evaluate most facts [-10]|"
+  when: server_sudoable.failed is defined and server_sudoable.failed 
+
+- name: Deduct 10 points (SUDO)
+  set_fact:
+    score:  "{{ score|int - 10 }}"
+  when: server_sudoable.failed is defined and server_sudoable.failed
+

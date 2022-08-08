@@ -1,0 +1,31 @@
+---
+- name: Get from Patching Calendar
+  uri:
+    url: "https://gpopatchingcal.sherwin.com/ords/apex_ts/rcal/hostgetstrat?host={{inventory_hostname}}"
+    headers:
+      "Content-Type": "application/json"
+      "Accept":       "application/json"
+      "Cache-Control": "no-cache"
+    method: GET
+    return_content: yes
+    status_code: 200
+    body_format: json
+    validate_certs: no
+  register: calresults
+  ignore_errors: true
+  retries: 10
+  delay: 30
+  delegate_to: 127.0.0.1
+
+- name: Server does not have a recurring patching calendar entry
+  block:
+    - name: Deduct 10 points (No patch cal recurrence)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (No patch cal recurrence)
+      set_fact:
+        wmsummary: "{{ wmsummary }} PATCHCALENDAR: Server recurrence not found in patching calendar. [-10]|"
+  when: calresults.json.count is not defined or calresults.json.count|int<1
+  delegate_to: 127.0.0.1
+  become: false
+

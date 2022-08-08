@@ -1,0 +1,132 @@
+---
+- name: Run connectivity check
+  include_role:
+    name: connectivitycheck
+
+- name: Check if Qualys facts missing
+  shell: last | grep qualys
+  register: qualysfact
+  ignore_errors: true
+
+- name: Set Qualys facts missing points
+  block:
+    - name: Deduct 10 points (Qualys facts)
+      set_fact:
+        score: "{{ score|int - 10 }}"
+    - name: Update server summary (Qualys facts)
+      set_fact:
+        wmsummary: "{{ wmsummary }} QUALYS: Qualys has not logged in. [-10]|"
+  when: (qualysfact is defined and qualysfact.rc != 0) or qualysfact is not defined
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Check if Server is beyond 90 days since last Qualys login
+  shell: last hpqualys console | head -n 1 | awk 'BEGIN {y='`date +%Y`'}$5 == "Dec" && last != "Dec" { y-- }{ print y,$0 ; last = $5 }' | awk '{print $5" "$6" "$1}'
+  register: qualysdatefact
+  ignore_errors: true
+  when: qualysfact is defined and qualysfact.rc != 0
+
+- name: Set Server is beyond 90 days since last Qualys login points
+  block:
+    - name: Deduct 10 points (Qualys 90 days)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (Qualys 90 days)
+      set_fact:
+        wmsummary: "{{ wmsummary }} QUALYS: Server is beyond 90 days from last login from qualys user. [-10]|"
+  when: (qualysdatefact is defined and qualysdatefact.stdout is defined and qualysdatefact.stdout != '  2021' and (current_date.stdout |to_datetime -  qualysdatefact.stdout| to_datetime('%b %d %Y')).days > 90) or qualysdatefact is not defined or (qualysdatefact is defined and qualysdatefact.stdout is defined and qualysdatefact.stdout == '  2021')
+  delegate_to: 127.0.0.1
+  become: false
+  ignore_errors: true
+
+- name: AD auth check
+  shell: ps -ef |grep -v grep | grep /opt/ldapux/bin/ldapclientd && exit 0 || exit 1
+  register: adfact
+  ignore_errors: true
+
+- name: Set AD auth check points
+  block:
+    - name: Deduct 10 points (AD auth)
+      set_fact:
+        score: "{{ score|int - 10 }}"
+    - name: Update server summary (AD auth)
+      set_fact:
+        wmsummary: "{{ wmsummary }} AD AUTH: no valid AD processes found. [-10]|"
+  when: (adfact is defined and adfact.failed == True) or adfact is not defined
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: check that sox facts file exists
+  stat:
+    path: /opt/wm_facts/facts.d/sox.txt
+  register: soxfile
+  become: true
+
+- name: Check if Server is beyond 90 days since last SOX check
+  shell: grep custom_sox_rundate /opt/wm_facts/facts.d/sox.txt | cut -d '=' -f2
+  register: soxdatefact
+  ignore_errors: true
+  become: true
+  when: soxfile.stat.exists
+
+- name: Set Server is beyond 90 days since last SOX check points
+  block:
+    - name: Deduct 10 points (SOX 90 days)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (SOX 90 days)
+      set_fact:
+        wmsummary: "{{ wmsummary }} SOX: Server is beyond 90 days from last run. [-10]|"
+  when: (soxfile.stat.exists and (soxdatefact.stdout is defined and soxdatefact.stdout != "" and (current_date.stdout |to_datetime -  soxdatefact.stdout| to_datetime('%b %d %Y')).days > 90)) or soxfile.stat.exists == false
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Check for SOX Errors
+  shell: cat /opt/wm_facts/facts.d/sox.txt | grep "=101" && exit 101 || exit 0
+  register: soxerrorsfact
+  failed_when: soxerrorsfact.rc !=0 and soxerrorsfact.rc != 101
+  ignore_errors: true
+  become: true
+  when: soxfile.stat.exists
+
+- name: Set SOX errors points
+  block:
+    - name: Deduct 10 points (SOX errors)
+      set_fact:
+        score: "{{ score|int - 10 }}"
+    - name: Update server summary (SOX errors)
+      set_fact:
+        wmsummary: "{{ wmsummary }} SOX: SOX report facts missing or failing: {{ soxerrorsfact.stdout }}. [-10]|"
+  when: (soxfile.stat.exists and (soxerrorsfact is defined and soxerrorsfact.rc == 101))
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Set SOX report missing points
+  block:
+    - name: Deduct 10 points (SOX report missing)
+      set_fact:
+        score: "{{ score|int - 10 }}"
+    - name: Update server summary (SOX report missing)
+      set_fact:
+        wmsummary: "{{ wmsummary }} SOX: SOX report missing. [-10]|"
+  when: soxfile.stat.exists == False
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Check for last patch
+  shell: "bash; /usr/sbin/swlist |grep -i -E '^[[:space:]]*bundle[[:space:]]' | awk '{print $2}' | cut -d '.' -f 2-4"
+  register: lastpatchdate
+  ignore_errors: true
+  become: true
+
+- name: Set last patch > 365 days points
+  block:
+    - name: Deduct 10 points (last patch date > 365 days)
+      set_fact:
+        score: "{{ score|int - 10 }}"
+    - name: Update server summary (last patch date > 365 days)
+      set_fact:
+        wmsummary: "{{ wmsummary }} OS: Last patch date over 365 days ago. {{ lastpatchdate.stdout }} [-10]|"
+  when: (lastpatchdate is defined and lastpatchdate.stdout is defined and lastpatchdate.stdout != "" and (current_date.stdout |to_datetime -  lastpatchdate.stdout| to_datetime('%Y.%m.%d')).days > 365) or lastpatchdate is not defined or lastpatchdate.failed == true or (lastpatchdate.stdout is defined and lastpatchdate.stdout == "")
+  delegate_to: 127.0.0.1
+  become: false

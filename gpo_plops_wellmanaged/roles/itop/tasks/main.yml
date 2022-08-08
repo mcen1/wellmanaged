@@ -1,0 +1,162 @@
+---
+- name: Get iTop facts about server (VM)
+  ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.sherwin.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'VirtualMachine'
+    oql_query: "SELECT VirtualMachine WHERE name = '{{inventory_hostname.split('.')[0]}}'"
+    validate_certs: no
+    itop_fields: 'id,name,canonicalos,lastpatch,status'
+  register: itop_ci_vm
+  ignore_errors: true
+  delegate_to: 127.0.0.1
+
+- name: Get iTop facts about server (Server)
+  ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.sherwin.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'Server'
+    oql_query: "SELECT Server WHERE name = '{{inventory_hostname.split('.')[0]}}'"
+    validate_certs: no
+    itop_fields: 'id,name,canonicalos,lastpatch,status'
+  register: itop_ci_server
+  ignore_errors: true
+  when: itop_ci_vm['output']['items'][0]['fields']['id'] is not defined
+  delegate_to: 127.0.0.1
+
+- name: Get iTop facts about server (Hypervisor)
+  ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.sherwin.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'Hypervisor'
+    oql_query: "SELECT Hypervisor WHERE name = '{{inventory_hostname.split('.')[0]}}'"
+    validate_certs: no
+    itop_fields: 'id,name,canonicalos,lastpatch,status'
+  register: itop_ci_hv
+  ignore_errors: true
+  when: itop_ci_server['output']['items'][0]['fields']['id'] is not defined and itop_ci_vm['output']['items'][0]['fields']['id'] is not defined
+  delegate_to: 127.0.0.1
+
+- name: Set iTop fact
+  set_fact:
+    itop_ci: "{{itop_ci_vm}}"
+  when: itop_ci_vm['output']['items'][0]['fields']['id'] is defined
+
+- name: Set iTop fact to server
+  set_fact:
+    itop_ci: "{{itop_ci_server}}"
+  when: itop_ci_server['output']['items'][0]['fields']['id'] is defined
+
+- name: Set iTop fact to HV
+  set_fact:
+    itop_ci: "{{itop_ci_hv}}"
+  when: itop_ci_hv['output']['items'][0]['fields']['id'] is defined
+
+# How would this ever be possible if we're using iTop as an inventory source?
+- name: Server missing in iTop
+  block:
+    - name: Deduct 15 points (Not in iTop)
+      set_fact:
+        score:  "{{ score|int - 15 }}"
+    - name: Update server summary (Not in iTop)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CMDB: Server not in iTop. [-15]|"
+  when:   itop_ci_server['output']['items'][0]['fields']['id'] is not defined and itop_ci_vm['output']['items'][0]['fields']['id'] is not defined and itop_ci_hv['output']['items'][0]['fields']['id'] is not defined 
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server not patched in iTop
+  block:
+    - name: Deduct 10 points (Not patched in iTop)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (Not patched in iTop)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CMDB: Server was not patched in this or prior quarter. [-10]|"
+  when:  itop_ci_vm['output']['items'][0]['fields']['last_patch'] is defined and itop_ci_vm['output']['items'][0]['fields']['lastpatch'] != current_quarter.stdout and itop_ci_vm['output']['items'][0]['fields']['lastpatch'] != previous_quarter.stdout
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server not operational in iTop
+  block:
+    - name: Deduct 1 point (Not operational in iTop)
+      set_fact:
+        score:  "{{ score|int - 1 }}"
+    - name: Update server summary (Not operational in iTop)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CMDB: Server not marked operational in iTop. [-1]|"
+  when:  itop_ci_vm['output']['items'][0]['fields']['status'] is defined and itop_ci_vm['output']['items'][0]['fields']['status'] != "operational"
+  delegate_to: 127.0.0.1
+  become: false
+
+
+- name: Check application solution to CI link to iTop
+  ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.sherwin.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'lnkApplicationSolutionToFunctionalCI'
+    validate_certs: no
+    oql_query: "SELECT lnkApplicationSolutionToFunctionalCI WHERE functionalci_id = '{{itop_ci['output']['items'][0]['fields']['id']}}'"
+    itop_fields: '*'
+  register: itop_lnk_output
+  when: itop_ci['output']['items'][0]['fields']['id'] is defined
+  ignore_errors: true
+  delegate_to: 127.0.0.1
+
+- name: Get appsol name from iTop
+  ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.sherwin.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'ApplicationSolution'
+    validate_certs: no
+    oql_query: "SELECT ApplicationSolution AS p JOIN lnkApplicationSolutionToFunctionalCI AS l1 ON l1.applicationsolution_id=p.id JOIN FunctionalCI AS t ON l1.functionalci_id=t.id WHERE t.name='{{inventory_hostname.split('.')[0]}}'"
+    itop_fields: 'name'
+  register: itop_appsol_name
+  when: itop_lnk_output is defined
+  ignore_errors: true
+  delegate_to: 127.0.0.1
+
+- name: Set appsola fact
+  set_fact:
+    appsola: ""
+  when: itop_appsol_name is defined
+
+- name: Set appsola fact iteration
+  set_fact:
+    appsola: "{{ appsola }} {{ item['fields']['name'] }}"
+  with_items: "{{ itop_appsol_name['output']['items'] }}"
+  when: '"fields" in itop_appsol_name|string'
+
+- name: Server canonical OS in iTop missing or unsupported
+  block:
+    - name: Deduct 10 points (iTop missing or unsupported canonical OS)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (iTop missing or unsupported canonical OS)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CMDB: Unsupported or missing canonical OS. [-10]|"
+  when: itop_ci['output']['items'][0]['fields']['canonicalos'] is defined and itop_ci['output']['items'][0]['fields']['canonicalos'].split('.')[0]|lower() not in supportedoses
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server missing application solution in iTop
+  block:
+    - name: Deduct 10 points (iTop no application solution)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (iTop no application solution)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CMDB: No application solution associated with server. [-10]|"
+  when: (itop_lnk_output.failed is defined and itop_lnk_output.failed) or (appsola=="")
+  delegate_to: 127.0.0.1
+  become: false

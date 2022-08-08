@@ -1,0 +1,62 @@
+@Library("shared-pipeline-library") _
+@Library("shared-pipeline-library-gcdunix") __
+
+ansiColor('xterm') {
+    node (label: 'linux') {
+      stage ("Checkout scm") {
+        checkout scm
+      }
+      stage ("Run inventory creation") {
+        sh "python3 inventory.py > inventory.ini"
+      }
+      stage ("Run playbook to clear db") {
+        withCredentials([file(credentialsId: "answmcreds", variable: 'ANSWMCREDS')]) {
+          sh "ansible-playbook -e 'credfile=\"${ANSWMCREDS}\"' cleardb.yml"
+        }
+      }
+      try {
+        stage ("Run playbook for Linux") {
+          withCredentials([file(credentialsId: "answmcreds", variable: 'ANSWMCREDS')]) {
+            withCredentials([file(credentialsId: "sa_ansible_ssh_key", variable: 'ANSIBLEKEY'), file(credentialsId: "ansvault", variable: 'ANS_VAULT_FILE')]){
+               sh "nice ansible-playbook  --private-key='${ANSIBLEKEY}' -i inventory.ini -u sa-ansible -e 'credfile=\"${ANSWMCREDS}\"' linux.yml"
+            }
+          }
+        }
+      } catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        echo "Linux WM Playbook failed, pipeline continuing"
+      }
+
+
+      try {
+        stage ("Run playbook for HPUX") {
+          withCredentials([file(credentialsId: "answmcreds", variable: 'ANSWMCREDS')]) {
+            withCredentials([file(credentialsId: "sa_ansible_ssh_key", variable: 'ANSIBLEKEY'), file(credentialsId: "ansvault", variable: 'ANS_VAULT_FILE')]){
+              sh "nice ansible-playbook  --private-key='${ANSIBLEKEY}' -i inventory.ini -u sa-ans -e 'credfile=\"${ANSWMCREDS}\"' hpux.yml"
+            }
+          }
+        }
+      } catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        echo "HPUX WM Playbook failed, pipeline continuing"
+      }
+      try {
+        stage ("Run playbook for Solaris") {
+          withCredentials([file(credentialsId: "answmcreds", variable: 'ANSWMCREDS')]) {
+            withCredentials([file(credentialsId: "ansvault", variable: 'ANS_VAULT_FILE')]){
+              sh "ansible-vault decrypt supporting_tools/opsctr/id_rsa_opsctr --vault-password-file='${ANS_VAULT_FILE}'"
+              sh "nice ansible-playbook  --private-key=supporting_tools/opsctr/id_rsa_opsctr -i inventory.ini -u opsctr -e 'credfile=\"${ANSWMCREDS}\"' solaris.yml -vv"
+            }
+          }
+        }
+      } catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        echo "Solaris WM Playbook failed, pipeline continuing"
+      }
+      stage ("Run playbook to update db metadata") {
+        withCredentials([file(credentialsId: "answmcreds", variable: 'ANSWMCREDS')]) {
+          sh "ansible-playbook -e 'credfile=\"${ANSWMCREDS}\"' updatedb.yml"
+        }
+      }
+    }
+}

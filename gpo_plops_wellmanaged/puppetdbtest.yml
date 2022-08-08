@@ -1,0 +1,20 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - "{{ credfile }}"
+  tasks:
+    - name: Get puppet output
+      getpuppetdbfacts:
+        puppetdb_url: https://puppetmaster5.sherwin.com:8081/pdb/query/v4/inventory
+        cert_file: '{{puppetdb_public}}'
+        pkey_file: '{{puppetdb_private}}'
+        query_by: 'facts.hostname'
+        query_equals: 'cputip01'
+        validate_certs: no
+      register: puppetfact
+    - name: print debug
+      debug:
+        msg: "{{puppetfact}}"

@@ -1,0 +1,13 @@
+---
+- name: Clear utip db
+  community.mysql.mysql_query:
+    login_db: build
+    query:
+    - TRUNCATE TABLE wellmanaged3 
+    single_transaction: yes
+    login_user: "{{ utipdb_username }}"
+    login_password: "{{ utipdb_password }}"
+    login_host: cputip01.sherwin.com
+  ignore_errors: true
+  register: utipdb_out
+

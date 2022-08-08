@@ -1,0 +1,38 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false 
+  serial: "{{parallel_nodes|default(50)}}"
+  strategy: linear
+  become: false
+  vars_files:
+    - "{{ credfile }}"
+    - vars/supportedoses.yml
+  tasks:
+    - name: Set criteria
+      set_fact:
+        criteria: "Well-managed Linux v3.0"
+    - name: Set osowner
+      set_fact:
+        osowner: "GCD Linux"
+    - name: Generate vars
+      include_role:
+        name: generatevars
+    - name: Run patching calendar tests
+      include_role:
+        name: patchcal
+    - name: Run iTop tests
+      include_role:
+        name: itop
+    - name: Run Puppet tests
+      include_role:
+        name: puppetchecks
+    - name: Run Zabbix tests
+      include_role:
+        name: zabbix
+    - name: Run Cyberark tests
+      include_role:
+        name: cyberark
+    - name: Populate to DB
+      include_role:
+        name: utipdb

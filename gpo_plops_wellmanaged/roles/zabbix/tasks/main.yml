@@ -1,0 +1,63 @@
+---
+- name: Get host info
+  local_action:
+    module: community.zabbix.zabbix_host_info
+    server_url: http://zabbixui.sherwin.com/zabbix
+    login_user: "{{ zabbix_username }}"
+    login_password: "{{ zabbix_password }}"
+    host_name: "{{ inventory_hostname.split('.')[0] }}"
+    timeout: 30
+    exact_match: no
+    remove_duplicate: yes
+    validate_certs: no
+  register: zabbix_out
+  ignore_errors: true
+
+- name: Server not in Zabbix
+  block:
+    - name: Deduct 10 points (Zabbix missing)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (Zabbix missing)
+      set_fact:
+        wmsummary: "{{ wmsummary }} ZABBIX: Server is missing from Zabbix. [-10]|"
+  when: (zabbix_out.failed is defined and zabbix_out.failed) or zabbix_out is not defined
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server unavailable in Zabbix
+  block:
+    - name: Deduct 5 points (Zabbix unavailable)
+      set_fact:
+        score:  "{{ score|int - 5 }}"
+    - name: Update server summary (Zabbix unavailable)
+      set_fact:
+        wmsummary: "{{ wmsummary }} ZABBIX: Server is marked unavailable in Zabbix. [-5]|"
+  when: zabbix_out['hosts'][0] is defined and zabbix_out['hosts'][0]["available"]!="1"
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server disabled in Zabbix
+  block:
+    - name: Deduct 5 points (Zabbix disabled)
+      set_fact:
+        score:  "{{ score|int - 5 }}"
+    - name: Update server summary (Zabbix disabled)
+      set_fact:
+        wmsummary: "{{ wmsummary }} ZABBIX: Server is marked disabled in Zabbix. [-5]|"
+  when: zabbix_out['hosts'][0] is defined and zabbix_out['hosts'][0]["disable_until"]!="0"
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server in maint mode in Zabbix
+  block:
+    - name: Deduct 5 points (Zabbix maint mode)
+      set_fact:
+        score:  "{{ score|int - 5 }}"
+    - name: Update server summary (Zabbix maint mode)
+      set_fact:
+        wmsummary: "{{ wmsummary }} ZABBIX: Server is marked in maintenance mode in Zabbix. [-5]|"
+  when: zabbix_out['hosts'][0] is defined and zabbix_out['hosts'][0]["maintenance_status"]!="0"
+  delegate_to: 127.0.0.1
+  become: false
+

@@ -1,0 +1,11 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: false 
+  become: false
+  vars_files:
+    - "{{ credfile }}"
+  tasks:
+    - name: Update utipdb 
+      include_role:
+        name: updatedb

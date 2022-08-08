@@ -1,0 +1,35 @@
+---
+- hosts: hpuxservers
+  gather_facts: false
+  serial: "{{parallel_nodes|default(50)}}"
+  strategy: linear
+  remote_user: sa-ans
+  become: false
+  vars_files:
+    - "{{ credfile }}"
+    - vars/supportedoses.yml
+  tasks:
+    - name: Set criteria
+      set_fact:
+        criteria: "Well-managed HPUX v1.0"
+    - name: Set osowner
+      set_fact:
+        osowner: "HPUX Support"
+    - name: Generate vars
+      include_role:
+        name: generatevars_hpux_sol
+    - name: Run iTop tests
+      include_role:
+        name: itop
+    - name: Run Fact Check
+      include_role:
+        name: hpux_facts
+    - name: Run Zabbix tests
+      include_role:
+        name: zabbix
+    - name: Run Cyberark tests
+      include_role:
+        name: cyberark
+    - name: Populate to DB
+      include_role:
+        name: utipdb

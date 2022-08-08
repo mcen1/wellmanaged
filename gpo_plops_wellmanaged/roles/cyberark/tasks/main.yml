@@ -1,0 +1,39 @@
+---
+- name: Grab cyberark metadata
+  community.mysql.mysql_query:
+    login_db: build
+    query:
+    - SELECT * FROM cyberarkmeta WHERE username = 'root' AND (address like '%{{inventory_hostname.split(".")[0]}}%' OR notes LIKE '%{{inventory_hostname.split(".")[0]}}%' OR notes LIKE '%{{inventory_hostname_ip.stdout}}%' OR address LIKE '%{{inventory_hostname_ip.stdout}}%')
+    single_transaction: yes
+    login_user: "{{ utipdb_username }}"
+    login_password: "{{ utipdb_password }}"
+    login_host: cputip01.sherwin.com
+  ignore_errors: true
+  register: cyberark_out
+  delegate_to: 127.0.0.1 
+  become: false
+
+- name: Server not in Cyberark 
+  block:
+    - name: Deduct 10 points (Cyberark missing)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (Cyberark missing)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CYBERARK: Server is missing from CyberArk. [-10]|"
+  when: cyberark_out['query_result'][0][0]['rotdate'] is not defined or (cyberark_out.failed is defined and cyberark_out.failed) 
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Server is beyond 90 days since last rotation
+  block:
+    - name: Deduct 10 points (Cyberark 90 days)
+      set_fact:
+        score:  "{{ score|int - 10 }}"
+    - name: Update server summary (Cyberark 90 days)
+      set_fact:
+        wmsummary: "{{ wmsummary }} CYBERARK: Server is beyond 90 days from rotation. [-10]|"
+  when: cyberark_out['query_result'][0][0]['rotdate'] is defined and (current_date.stdout |to_datetime - cyberark_out['query_result'][0][0]['rotdate'] | to_datetime).days > 90
+  delegate_to: 127.0.0.1
+  become: false
+

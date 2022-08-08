@@ -1,0 +1,23 @@
+---
+- name: Sanitize wmsummary
+  set_fact:
+    wmsummary: "Well-managed"
+  when: wmsummary==""
+
+- name: Print results
+  debug:
+    msg: "score: {{score}} summary: {{wmsummary}}"
+
+- name: Add to utip db
+  community.mysql.mysql_query:
+    login_db: build
+    query:
+    - INSERT INTO wellmanaged3 (name,score,status,criteria,osowner,appsol,auditscope) VALUES ("{{inventory_hostname}}", "{{score}}","{{wmsummary}}","{{criteria}}","{{osowner}}","{{appsola| default('undefined')}}","{{audit_scopes.stdout|default('undefined')}}")
+    single_transaction: yes
+    login_user: "{{ utipdb_username }}"
+    login_password: "{{ utipdb_password }}"
+    login_host: cputip01.sherwin.com
+  ignore_errors: true
+  register: utipdb_out
+  delegate_to: 127.0.0.1
+

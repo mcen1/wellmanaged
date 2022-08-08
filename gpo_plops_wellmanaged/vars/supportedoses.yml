@@ -1,0 +1,14 @@
+# Please keep lower case
+supportedoses:
+  - "solaris 11"
+  - "centos 7"
+  - "centos 8"
+  - "oraclelinux 6"
+  - "oraclelinux 7"
+  - "oraclelinux 8"
+  - "redhat 6"
+  - "redhat 7"
+  - "redhat 8"
+  - "ubuntu 18"
+  - "ubuntu 20"
+  - "hpux 11"

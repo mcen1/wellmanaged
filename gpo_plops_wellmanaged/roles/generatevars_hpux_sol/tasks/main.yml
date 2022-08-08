@@ -1,0 +1,59 @@
+---
+- name: Set score to 100
+  set_fact:
+    score: 100
+
+- name: Set wmsummary
+  set_fact:
+    wmsummary: ""
+
+# used for debug
+#- name: Set inventory_hostname
+#  set_fact:
+#    inventory_hostname: "cpwebp01"
+#    inventory_hostname: "BOLOGNA-TSAT"
+
+# remote_user needs to be sa-ansible bc its delegated to localhost
+
+- name: Set current date
+  shell: date +%Y-%m-%d\ %H:%M:%S
+  register: current_date
+  changed_when: False
+  remote_user: sa-ansible
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Set current quarter
+  shell: python3 supporting_tools/genquarters.py current
+  register: current_quarter
+  changed_when: False
+  remote_user: sa-ansible
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Retrieve audit participation
+  shell: python3 supporting_tools/auditscope.py "{{inventory_hostname}}"
+  register: audit_scopes
+  ignore_errors: True
+  changed_when: False
+  remote_user: sa-ansible
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: Set previous quarter
+  shell: python3 supporting_tools/genquarters.py previous
+  register: previous_quarter
+  changed_when: False
+  remote_user: sa-ansible
+  delegate_to: 127.0.0.1
+  become: false
+
+- name: "Get IP addresses for servers"
+  shell: python3 supporting_tools/getip.py "{{ inventory_hostname }}"
+  register: inventory_hostname_ip
+  changed_when: false
+  failed_when: inventory_hostname_ip.stdout | length < 2
+  become: false
+  delegate_to: 127.0.0.1
+  remote_user: sa-ansible
+
